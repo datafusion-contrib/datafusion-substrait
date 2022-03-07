@@ -48,13 +48,18 @@ pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef) -> Result<Expression>
                 Operator::LtEq => 3,
                 Operator::Gt => 4,
                 Operator::GtEq => 5,
-                _ => todo!(),
+                _ => {
+                    return Err(DataFusionError::NotImplemented(format!(
+                        "Unsupported operator: {:?}",
+                        op
+                    )))
+                }
             };
             Ok(Expression {
                 rex_type: Some(RexType::ScalarFunction(ScalarFunction {
                     function_reference,
                     args: vec![l, r],
-                    output_type: None, // TODO
+                    output_type: None,
                 })),
             })
         }
@@ -64,7 +69,12 @@ pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef) -> Result<Expression>
                 ScalarValue::Int16(Some(n)) => Some(LiteralType::I16(*n as i32)),
                 ScalarValue::Int32(Some(n)) => Some(LiteralType::I32(*n)),
                 ScalarValue::Int64(Some(n)) => Some(LiteralType::I64(*n)),
-                _ => todo!(),
+                _ => {
+                    return Err(DataFusionError::NotImplemented(format!(
+                        "Unsupported literal: {:?}",
+                        value
+                    )))
+                }
             };
             Ok(Expression {
                 rex_type: Some(RexType::Literal(Literal {
@@ -175,6 +185,57 @@ pub async fn from_substrait_rex(e: &Expression, input: &dyn DataFrame) -> Result
             _ => Err(DataFusionError::NotImplemented(
                 "unsupported field ref type".to_string(),
             )),
+        },
+        Some(RexType::ScalarFunction(f)) => {
+            assert!(f.args.len() == 2);
+            let op = match f.function_reference {
+                1 => Operator::Eq,
+                2 => Operator::Lt,
+                3 => Operator::LtEq,
+                4 => Operator::Gt,
+                5 => Operator::GtEq,
+                _ => {
+                    return Err(DataFusionError::NotImplemented(format!(
+                        "Unsupported function_reference: {:?}",
+                        f.function_reference
+                    )))
+                }
+            };
+            Ok(Arc::new(Expr::BinaryExpr {
+                left: Box::new(
+                    from_substrait_rex(&f.args[0], input)
+                        .await?
+                        .as_ref()
+                        .clone(),
+                ),
+                op,
+                right: Box::new(
+                    from_substrait_rex(&f.args[1], input)
+                        .await?
+                        .as_ref()
+                        .clone(),
+                ),
+            }))
+        }
+        Some(RexType::Literal(lit)) => match lit.literal_type {
+            Some(LiteralType::I8(n)) => {
+                Ok(Arc::new(Expr::Literal(ScalarValue::Int8(Some(n as i8)))))
+            }
+            Some(LiteralType::I16(n)) => {
+                Ok(Arc::new(Expr::Literal(ScalarValue::Int16(Some(n as i16)))))
+            }
+            Some(LiteralType::I32(n)) => {
+                Ok(Arc::new(Expr::Literal(ScalarValue::Int32(Some(n as i32)))))
+            }
+            Some(LiteralType::I64(n)) => {
+                Ok(Arc::new(Expr::Literal(ScalarValue::Int64(Some(n as i64)))))
+            }
+            _ => {
+                return Err(DataFusionError::NotImplemented(format!(
+                    "Unsupported literal_type: {:?}",
+                    lit.literal_type
+                )))
+            }
         },
         _ => Err(DataFusionError::NotImplemented(
             "unsupported rex_type".to_string(),
