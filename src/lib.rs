@@ -5,19 +5,22 @@ use async_recursion::async_recursion;
 use datafusion::prelude::{DataFrame, ExecutionContext};
 use datafusion::{
     error::{DataFusionError, Result},
-    logical_plan::{DFSchemaRef, Expr, LogicalPlan},
+    logical_plan::{DFSchemaRef, Expr, LogicalPlan, Operator},
     prelude::Column,
+    scalar::ScalarValue,
 };
 
 use substrait::protobuf::{
+    derivation_expression::{binary_op, BinaryOp},
     expression::{
         field_reference::{ReferenceType, ReferenceType::MaskedReference},
+        literal::LiteralType,
         mask_expression::{StructItem, StructSelect},
-        FieldReference, MaskExpression, RexType,
+        FieldReference, Literal, MaskExpression, RexType,
     },
     read_rel::{NamedTable, ReadType},
     rel::RelType,
-    Expression, NamedStruct, ProjectRel, ReadRel, Rel,
+    Expression, FilterRel, NamedStruct, ProjectRel, ReadRel, Rel,
 };
 
 /// Convert DataFusion Expr to Substrait Rex
@@ -37,9 +40,43 @@ pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef) -> Result<Expression>
                 root_type: None,
             }))),
         }),
-        _ => Err(DataFusionError::NotImplemented(
-            "Unsupported logical plan expression".to_string(),
-        )),
+        Expr::BinaryExpr { left, op, right } => {
+            let l = to_substrait_rex(left, schema)?;
+            let r = to_substrait_rex(right, schema)?;
+            // let op_type = match op {
+            //     Operator::Lt => Ok(binary_op::BinaryOpType::LessThan),
+            //     Operator::Gt => Ok(binary_op::BinaryOpType::GreaterThan),
+            //     _ => Err(DataFusionError::NotImplemented(format!(
+            //         "Unsupported binary operator '{}'",
+            //         op
+            //     ))),
+            // }?;
+            // let _ = BinaryOp {
+            //     arg1: None,
+            //     arg2: None,
+            //     op_type: op_type as i32,
+            // };
+            todo!()
+        }
+        Expr::Literal(value) => {
+            let literal_type = match value {
+                ScalarValue::Int8(Some(n)) => Some(LiteralType::I8(*n as i32)),
+                ScalarValue::Int16(Some(n)) => Some(LiteralType::I16(*n as i32)),
+                ScalarValue::Int32(Some(n)) => Some(LiteralType::I32(*n)),
+                ScalarValue::Int64(Some(n)) => Some(LiteralType::I64(*n)),
+                _ => todo!(),
+            };
+            Ok(Expression {
+                rex_type: Some(RexType::Literal(Literal {
+                    nullable: true,
+                    literal_type,
+                })),
+            })
+        }
+        _ => Err(DataFusionError::NotImplemented(format!(
+            "Unsupported expression: {:?}",
+            expr
+        ))),
     }
 }
 
@@ -98,9 +135,22 @@ pub fn to_substrait_rel(plan: &LogicalPlan) -> Result<Box<Rel>> {
                 }))),
             }))
         }
-        _ => Err(DataFusionError::NotImplemented(
-            "Unsupported logical plan operator".to_string(),
-        )),
+        LogicalPlan::Filter(filter) => {
+            let input = to_substrait_rel(filter.input.as_ref())?;
+            let filter_expr = to_substrait_rex(&filter.predicate, filter.input.schema())?;
+            Ok(Box::new(Rel {
+                rel_type: Some(RelType::Filter(Box::new(FilterRel {
+                    common: None,
+                    input: Some(input),
+                    condition: Some(Box::new(filter_expr)),
+                    advanced_extension: None,
+                }))),
+            }))
+        }
+        _ => Err(DataFusionError::NotImplemented(format!(
+            "Unsupported operator: {:?}",
+            plan
+        ))),
     }
 }
 
@@ -171,6 +221,16 @@ mod tests {
         roundtrip("SELECT a, b FROM data").await
     }
 
+    #[tokio::test]
+    async fn wildcard_select() -> Result<()> {
+        roundtrip("SELECT * FROM data").await
+    }
+
+    #[tokio::test]
+    async fn select_with_filter() -> Result<()> {
+        roundtrip("SELECT * FROM data WHERE a > 1").await
+    }
+
     async fn roundtrip(sql: &str) -> Result<()> {
         let mut ctx = ExecutionContext::new();
         ctx.register_csv("data", "testdata/data.csv", CsvReadOptions::new())
@@ -184,6 +244,7 @@ mod tests {
         let plan1str = format!("{:?}", plan);
         let plan2str = format!("{:?}", plan2);
         assert_eq!(plan1str, plan2str);
+        println!("{}", plan2str);
         Ok(())
     }
 }
