@@ -1,10 +1,9 @@
-use datafusion::prelude::JoinType;
 use datafusion::{
     error::{DataFusionError, Result},
-    logical_plan::{DFSchemaRef, Expr, LogicalPlan, Operator},
+    logical_plan::{DFSchemaRef, Expr, JoinConstraint, LogicalPlan, Operator},
+    prelude::JoinType,
     scalar::ScalarValue,
 };
-
 use substrait::protobuf::{
     expression::{
         field_reference::ReferenceType,
@@ -17,6 +16,7 @@ use substrait::protobuf::{
     rel::RelType,
     Expression, FilterRel, FunctionArgument, JoinRel, NamedStruct, ProjectRel, ReadRel, Rel,
 };
+
 /// Convert DataFusion LogicalPlan to Substrait Rel
 pub fn to_substrait_rel(plan: &LogicalPlan) -> Result<Box<Rel>> {
     match plan {
@@ -99,21 +99,47 @@ pub fn to_substrait_rel(plan: &LogicalPlan) -> Result<Box<Rel>> {
                 JoinType::Anti => 5,
                 JoinType::Semi => 6,
             };
+            // we only support basic joins so return an error for anything not yet supported
+            if join.null_equals_null {
+                return Err(DataFusionError::NotImplemented(
+                    "join null_equals_null".to_string(),
+                ));
+            }
+            if join.filter.is_some() {
+                return Err(DataFusionError::NotImplemented("join filter".to_string()));
+            }
+            match join.join_constraint {
+                JoinConstraint::On => {}
+                _ => {
+                    return Err(DataFusionError::NotImplemented(
+                        "join constraint".to_string(),
+                    ))
+                }
+            }
+            // map the left and right columns to binary expressions in the form `l = r`
+            let join_expression: Vec<Expr> = join
+                .on
+                .iter()
+                .map(|(l, r)| Expr::Column(l.clone()).eq(Expr::Column(r.clone())))
+                .collect();
+            // build a single expression for the ON condition, such as `l.a = r.a AND l.b = r.b`
+            let join_expression: Expr = join_expression
+                .iter()
+                .skip(1)
+                .fold(join_expression[0].clone(), |acc: Expr, expr: &Expr| {
+                    acc.and(expr.clone())
+                });
             Ok(Box::new(Rel {
                 rel_type: Some(RelType::Join(Box::new(JoinRel {
                     common: None,
                     left: Some(left),
                     right: Some(right),
                     r#type: join_type,
-                    expression: None,
+                    expression: Some(Box::new(to_substrait_rex(&join_expression, &join.schema)?)),
                     post_join_filter: None,
                     advanced_extension: None,
                 }))),
             }))
-        }
-        LogicalPlan::SubqueryAlias(alias) => {
-            // not sure how we model this in substrait?
-            todo!()
         }
         _ => Err(DataFusionError::NotImplemented(format!(
             "Unsupported operator: {:?}",

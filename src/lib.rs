@@ -35,7 +35,7 @@ mod tests {
 
     #[tokio::test]
     async fn trivial_inner_join() -> Result<()> {
-        roundtrip("SELECT data.a FROM data JOIN data data2 ON data.a = data2.a").await
+        roundtrip("SELECT data.a FROM data JOIN data2 ON data.a = data2.a").await
     }
 
     async fn roundtrip(sql: &str) -> Result<()> {

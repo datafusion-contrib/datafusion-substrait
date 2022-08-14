@@ -1,15 +1,13 @@
-use std::sync::Arc;
-
 use async_recursion::async_recursion;
-
 use datafusion::prelude::JoinType;
 use datafusion::{
     error::{DataFusionError, Result},
     logical_plan::{Expr, Operator},
+    optimizer::utils::split_conjunction,
     prelude::{Column, DataFrame, SessionContext},
     scalar::ScalarValue,
 };
-
+use std::sync::Arc;
 use substrait::protobuf::{
     expression::{field_reference::ReferenceType::MaskedReference, literal::LiteralType, RexType},
     function_argument::ArgType,
@@ -97,7 +95,34 @@ pub async fn from_substrait_rel(ctx: &mut SessionContext, rel: &Rel) -> Result<A
                 6 => JoinType::Semi,
                 _ => return Err(DataFusionError::Internal("invalid join type".to_string())),
             };
-            left.join(right, join_type, &[], &[], None)
+            let mut predicates = vec![];
+            let on = from_substrait_rex(&join.expression.as_ref().unwrap(), &left).await?;
+            split_conjunction(&on, &mut predicates);
+            let pairs = predicates
+                .iter()
+                .map(|p| match p {
+                    Expr::BinaryExpr {
+                        left,
+                        op: Operator::Eq,
+                        right,
+                    } => match (left.as_ref(), right.as_ref()) {
+                        (Expr::Column(l), Expr::Column(r)) => Ok((l.flat_name(), r.flat_name())),
+                        _ => {
+                            return Err(DataFusionError::Internal(
+                                "invalid join condition".to_string(),
+                            ))
+                        }
+                    },
+                    _ => {
+                        return Err(DataFusionError::Internal(
+                            "invalid join condition".to_string(),
+                        ))
+                    }
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let left_cols: Vec<&str> = pairs.iter().map(|(l, _)| l.as_str()).collect();
+            let right_cols: Vec<&str> = pairs.iter().map(|(_, r)| r.as_str()).collect();
+            left.join(right, join_type, &left_cols, &right_cols, None)
         }
         Some(RelType::Read(read)) => match &read.as_ref().read_type {
             Some(ReadType::NamedTable(nt)) => {
