@@ -180,20 +180,10 @@ pub fn operator_to_reference(op: Operator) -> u32 {
 /// Convert DataFusion Expr to Substrait Rex
 pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef) -> Result<Expression> {
     match expr {
-        Expr::Column(col) => Ok(Expression {
-            rex_type: Some(RexType::Selection(Box::new(FieldReference {
-                reference_type: Some(ReferenceType::MaskedReference(MaskExpression {
-                    select: Some(StructSelect {
-                        struct_items: vec![StructItem {
-                            field: schema.index_of_column(&col)? as i32,
-                            child: None,
-                        }],
-                    }),
-                    maintain_singular_struct: false,
-                })),
-                root_type: None,
-            }))),
-        }),
+        Expr::Column(col) => {
+            let index = schema.index_of_column(&col)?;
+            substrait_field_ref(index)
+        }
         Expr::BinaryExpr { left, op, right } => {
             let l = to_substrait_rex(left, schema)?;
             let r = to_substrait_rex(right, schema)?;
@@ -248,4 +238,21 @@ pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef) -> Result<Expression>
             expr
         ))),
     }
+}
+
+fn substrait_field_ref(index: usize) -> Result<Expression> {
+    Ok(Expression {
+        rex_type: Some(RexType::Selection(Box::new(FieldReference {
+            reference_type: Some(ReferenceType::MaskedReference(MaskExpression {
+                select: Some(StructSelect {
+                    struct_items: vec![StructItem {
+                        field: index as i32,
+                        child: None,
+                    }],
+                }),
+                maintain_singular_struct: false,
+            })),
+            root_type: None,
+        }))),
+    })
 }

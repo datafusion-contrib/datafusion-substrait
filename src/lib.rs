@@ -47,6 +47,10 @@ mod tests {
         let df = ctx.sql(sql).await?;
         let plan = df.to_logical_plan()?;
         let proto = to_substrait_rel(&plan)?;
+
+        // pretty print the protobuf struct
+        println!("{:#?}", proto);
+
         let df = from_substrait_rel(&mut ctx, &proto).await?;
         let plan2 = df.to_logical_plan()?;
         let plan2 = ctx.optimize(&plan2)?;
