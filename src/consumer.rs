@@ -1,5 +1,6 @@
 use async_recursion::async_recursion;
-use datafusion::common::DFSchema;
+use datafusion::common::{DFField, DFSchema, DFSchemaRef};
+use datafusion::logical_expr::LogicalPlan;
 use datafusion::logical_plan::build_join_schema;
 use datafusion::prelude::JoinType;
 use datafusion::{
@@ -9,6 +10,7 @@ use datafusion::{
     prelude::{Column, DataFrame, SessionContext},
     scalar::ScalarValue,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use substrait::protobuf::{
     expression::{
@@ -134,16 +136,32 @@ pub async fn from_substrait_rel(ctx: &mut SessionContext, rel: &Rel) -> Result<A
             Some(ReadType::NamedTable(nt)) => {
                 let table_name: String = nt.names[0].clone();
                 let t = ctx.table(&*table_name)?;
-                let input_schema = t.schema().clone();
                 match &read.projection {
                     Some(MaskExpression { select, .. }) => match &select.as_ref() {
                         Some(projection) => {
-                            let column_names: Vec<&str> = projection
+                            let column_indices: Vec<usize> = projection
                                 .struct_items
                                 .iter()
-                                .map(|item| input_schema.field(item.field as usize).name().as_str())
+                                .map(|item| item.field as usize)
                                 .collect();
-                            t.select_columns(&column_names)
+                            match t.to_logical_plan()? {
+                                LogicalPlan::TableScan(scan) => {
+                                    let mut scan = scan.clone();
+                                    let fields: Vec<DFField> = column_indices
+                                        .iter()
+                                        .map(|i| scan.projected_schema.field(*i).clone())
+                                        .collect();
+                                    scan.projection = Some(column_indices);
+                                    scan.projected_schema = DFSchemaRef::new(
+                                        DFSchema::new_with_metadata(fields, HashMap::new())?,
+                                    );
+                                    let plan = LogicalPlan::TableScan(scan);
+                                    Ok(Arc::new(DataFrame::new(ctx.state.clone(), &plan)))
+                                }
+                                _ => Err(DataFusionError::Internal(
+                                    "unexpected plan for table".to_string(),
+                                )),
+                            }
                         }
                         _ => Ok(t),
                     },

@@ -46,14 +46,20 @@ mod tests {
             .await?;
         let df = ctx.sql(sql).await?;
         let plan = df.to_logical_plan()?;
+        //println!("Input Plan:\n{:?}", plan);
+
         let proto = to_substrait_rel(&plan)?;
 
         // pretty print the protobuf struct
-        println!("{:#?}", proto);
+        //println!("{:#?}", proto);
 
         let df = from_substrait_rel(&mut ctx, &proto).await?;
         let plan2 = df.to_logical_plan()?;
+        //println!("Roundtrip Plan:\n{:?}", plan2);
+
         let plan2 = ctx.optimize(&plan2)?;
+        //println!("Optimized Roundtrip Plan:\n{:?}", plan2);
+
         let plan1str = format!("{:?}", plan);
         let plan2str = format!("{:?}", plan2);
         assert_eq!(plan1str, plan2str);
