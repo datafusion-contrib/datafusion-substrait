@@ -1,3 +1,4 @@
+use datafusion::prelude::JoinType;
 use datafusion::{
     error::{DataFusionError, Result},
     logical_plan::{DFSchemaRef, Expr, LogicalPlan, Operator},
@@ -14,7 +15,7 @@ use substrait::protobuf::{
     function_argument::ArgType,
     read_rel::{NamedTable, ReadType},
     rel::RelType,
-    Expression, FilterRel, FunctionArgument, NamedStruct, ProjectRel, ReadRel, Rel,
+    Expression, FilterRel, FunctionArgument, JoinRel, NamedStruct, ProjectRel, ReadRel, Rel,
 };
 /// Convert DataFusion LogicalPlan to Substrait Rel
 pub fn to_substrait_rel(plan: &LogicalPlan) -> Result<Box<Rel>> {
@@ -87,6 +88,33 @@ pub fn to_substrait_rel(plan: &LogicalPlan) -> Result<Box<Rel>> {
                 }))),
             }))
         }
+        LogicalPlan::Join(join) => {
+            let left = to_substrait_rel(join.left.as_ref())?;
+            let right = to_substrait_rel(join.right.as_ref())?;
+            let join_type = match join.join_type {
+                JoinType::Inner => 1,
+                JoinType::Left => 2,
+                JoinType::Right => 3,
+                JoinType::Full => 4,
+                JoinType::Anti => 5,
+                JoinType::Semi => 6,
+            };
+            Ok(Box::new(Rel {
+                rel_type: Some(RelType::Join(Box::new(JoinRel {
+                    common: None,
+                    left: Some(left),
+                    right: Some(right),
+                    r#type: join_type,
+                    expression: None,
+                    post_join_filter: None,
+                    advanced_extension: None,
+                }))),
+            }))
+        }
+        LogicalPlan::SubqueryAlias(alias) => {
+            // not sure how we model this in substrait?
+            todo!()
+        }
         _ => Err(DataFusionError::NotImplemented(format!(
             "Unsupported operator: {:?}",
             plan
@@ -131,7 +159,7 @@ pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef) -> Result<Expression>
                 reference_type: Some(ReferenceType::MaskedReference(MaskExpression {
                     select: Some(StructSelect {
                         struct_items: vec![StructItem {
-                            field: schema.index_of_column_by_name(None, &col.name)? as i32,
+                            field: schema.index_of_column(&col)? as i32,
                             child: None,
                         }],
                     }),

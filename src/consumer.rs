@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_recursion::async_recursion;
 
+use datafusion::prelude::JoinType;
 use datafusion::{
     error::{DataFusionError, Result},
     logical_plan::{Expr, Operator},
@@ -83,6 +84,20 @@ pub async fn from_substrait_rel(ctx: &mut SessionContext, rel: &Rel) -> Result<A
                     "Filter without an input is not valid".to_string(),
                 ))
             }
+        }
+        Some(RelType::Join(join)) => {
+            let left = from_substrait_rel(ctx, &join.left.as_ref().unwrap()).await?;
+            let right = from_substrait_rel(ctx, &join.right.as_ref().unwrap()).await?;
+            let join_type = match join.r#type {
+                1 => JoinType::Inner,
+                2 => JoinType::Left,
+                3 => JoinType::Right,
+                4 => JoinType::Full,
+                5 => JoinType::Anti,
+                6 => JoinType::Semi,
+                _ => return Err(DataFusionError::Internal("invalid join type".to_string())),
+            };
+            left.join(right, join_type, &[], &[], None)
         }
         Some(RelType::Read(read)) => match &read.as_ref().read_type {
             Some(ReadType::NamedTable(nt)) => {

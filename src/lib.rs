@@ -33,9 +33,16 @@ mod tests {
         roundtrip("SELECT * FROM data WHERE d AND a > 1").await
     }
 
+    #[tokio::test]
+    async fn trivial_inner_join() -> Result<()> {
+        roundtrip("SELECT data.a FROM data JOIN data data2 ON data.a = data2.a").await
+    }
+
     async fn roundtrip(sql: &str) -> Result<()> {
         let mut ctx = SessionContext::new();
         ctx.register_csv("data", "testdata/data.csv", CsvReadOptions::new())
+            .await?;
+        ctx.register_csv("data2", "testdata/data.csv", CsvReadOptions::new())
             .await?;
         let df = ctx.sql(sql).await?;
         let plan = df.to_logical_plan()?;
