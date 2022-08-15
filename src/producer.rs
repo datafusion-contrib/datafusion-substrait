@@ -123,23 +123,26 @@ pub fn to_substrait_rel(plan: &LogicalPlan) -> Result<Box<Rel>> {
                 .map(|(l, r)| Expr::Column(l.clone()).eq(Expr::Column(r.clone())))
                 .collect();
             // build a single expression for the ON condition, such as `l.a = r.a AND l.b = r.b`
-            let join_expression: Expr = join_expression
-                .iter()
-                .skip(1)
-                .fold(join_expression[0].clone(), |acc: Expr, expr: &Expr| {
-                    acc.and(expr.clone())
-                });
-            Ok(Box::new(Rel {
-                rel_type: Some(RelType::Join(Box::new(JoinRel {
-                    common: None,
-                    left: Some(left),
-                    right: Some(right),
-                    r#type: join_type,
-                    expression: Some(Box::new(to_substrait_rex(&join_expression, &join.schema)?)),
-                    post_join_filter: None,
-                    advanced_extension: None,
-                }))),
-            }))
+            let join_expression = join_expression
+                .into_iter()
+                .reduce(|acc: Expr, expr: Expr| acc.and(expr));
+            if let Some(e) = join_expression {
+                Ok(Box::new(Rel {
+                    rel_type: Some(RelType::Join(Box::new(JoinRel {
+                        common: None,
+                        left: Some(left),
+                        right: Some(right),
+                        r#type: join_type,
+                        expression: Some(Box::new(to_substrait_rex(&e, &join.schema)?)),
+                        post_join_filter: None,
+                        advanced_extension: None,
+                    }))),
+                }))
+            } else {
+                Err(DataFusionError::NotImplemented(
+                    "Empty join condition".to_string(),
+                ))
+            }
         }
         _ => Err(DataFusionError::NotImplemented(format!(
             "Unsupported operator: {:?}",
