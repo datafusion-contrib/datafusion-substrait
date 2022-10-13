@@ -95,7 +95,7 @@ pub async fn from_substrait_rel(ctx: &mut SessionContext, rel: &Rel) -> Result<A
                 let input = from_substrait_rel(ctx, input).await?;
                 let offset = fetch.offset as usize;
                 let count = fetch.count as usize;
-                input.limit(Some(offset), Some(count))
+                input.limit(offset, Some(count))
             } else {
                 Err(DataFusionError::NotImplemented(
                     "Fetch without an input is not valid".to_string(),
