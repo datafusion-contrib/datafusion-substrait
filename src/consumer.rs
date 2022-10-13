@@ -47,6 +47,11 @@ pub fn reference_to_op(reference: u32) -> Result<Operator> {
         20 => Ok(Operator::RegexNotMatch),
         21 => Ok(Operator::RegexNotIMatch),
         22 => Ok(Operator::BitwiseAnd),
+        23 => Ok(Operator::BitwiseOr),
+        24 => Ok(Operator::StringConcat),
+        25 => Ok(Operator::BitwiseXor),
+        26 => Ok(Operator::BitwiseShiftRight),
+        27 => Ok(Operator::BitwiseShiftLeft),
         _ => Err(DataFusionError::NotImplemented(format!(
             "Unsupported function_reference: {:?}",
             reference

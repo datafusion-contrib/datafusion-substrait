@@ -14,7 +14,8 @@ use substrait::protobuf::{
     function_argument::ArgType,
     read_rel::{NamedTable, ReadType},
     rel::RelType,
-    Expression, FetchRel, FilterRel, FunctionArgument, JoinRel, NamedStruct, ProjectRel, ReadRel, Rel,
+    Expression, FetchRel, FilterRel, FunctionArgument, JoinRel, NamedStruct, ProjectRel, ReadRel,
+    Rel,
 };
 
 /// Convert DataFusion LogicalPlan to Substrait Rel
@@ -195,7 +196,7 @@ pub fn operator_to_reference(op: Operator) -> u32 {
         Operator::StringConcat => 24,
         Operator::BitwiseXor => 25,
         Operator::BitwiseShiftRight => 26,
-        Operator::BitwiseShiftLeft => 27
+        Operator::BitwiseShiftLeft => 27,
     }
 }
 
