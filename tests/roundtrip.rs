@@ -45,6 +45,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn simple_aggregate() -> Result<()> {
+        roundtrip("SELECT a, sum(b) FROM data GROUP BY a").await
+    }
+
+    #[tokio::test]
+    async fn aggregate_distinct_with_having() -> Result<()> {
+        roundtrip("SELECT a, count(distinct b) FROM data GROUP BY a, c HAVING count(b) > 100").await
+    }
+
+    #[tokio::test]
+    async fn aggregate_multiple_keys() -> Result<()> {
+        roundtrip("SELECT a, c, avg(b) FROM data GROUP BY a, c").await
+    }
+
+    #[tokio::test]
     async fn roundtrip_inner_join() -> Result<()> {
         roundtrip("SELECT data.a FROM data JOIN data2 ON data.a = data2.a").await
     }
@@ -98,6 +113,9 @@ mod tests {
 
         let df = from_substrait_plan(&mut ctx, &proto).await?;
         let plan2 = df.to_logical_plan()?;
+
+        println!("{:#?}", plan);
+        println!("{:#?}", plan2);
 
         let plan1str = format!("{:?}", plan);
         let plan2str = format!("{:?}", plan2);
