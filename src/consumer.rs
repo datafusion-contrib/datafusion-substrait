@@ -65,13 +65,16 @@ pub fn reference_to_op(reference: u32) -> Result<Operator> {
 pub async fn from_substrait_plan(ctx: &mut SessionContext, plan: &Plan) -> Result<Arc<DataFrame>> {
     match plan.relations.len() {
         1 => {
-            match plan.relations[0].rel_type.as_ref().unwrap() {
-                substrait::protobuf::plan_rel::RelType::Rel(rel) => {
-                    Ok(from_substrait_rel(ctx, &rel).await?)
+            match plan.relations[0].rel_type.as_ref() {
+                Some(rt) => match rt {
+                    substrait::protobuf::plan_rel::RelType::Rel(rel) => {
+                        Ok(from_substrait_rel(ctx, &rel).await?)
+                    },
+                    substrait::protobuf::plan_rel::RelType::Root(_) => Err(DataFusionError::NotImplemented(
+                        "RootRel not supported".to_string()
+                    )),
                 },
-                substrait::protobuf::plan_rel::RelType::Root(_) => Err(DataFusionError::NotImplemented(
-                    "RootRel not supported".to_string()
-                )),
+                None => Err(DataFusionError::Internal("Cannot parse plan relation: None".to_string()))
             }
             
         },

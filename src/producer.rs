@@ -16,6 +16,7 @@ use substrait::protobuf::{
         SortKind,
     },
     function_argument::ArgType,
+    plan_rel,
     read_rel::{NamedTable, ReadType},
     rel::RelType,
     Expression, FetchRel, FilterRel, FunctionArgument, JoinRel, NamedStruct, ProjectRel, ReadRel, SortField, SortRel,
@@ -27,13 +28,10 @@ use substrait::protobuf::{
 pub fn to_substrait_plan(plan: &LogicalPlan) -> Result<Box<Plan>> {
     // Parse relation nodes
     let mut extensions: Vec<extensions::SimpleExtensionDeclaration> = vec![];
-    let proto = to_substrait_rel(plan, &mut extensions).unwrap();
     // Generate PlanRel(s)
     // Note: Only 1 relation tree is currently supported
     let plan_rels = vec![PlanRel {
-        rel_type: Some(substrait::protobuf::plan_rel::RelType::Rel(
-            *proto
-        ))
+        rel_type: Some(plan_rel::RelType::Rel(*to_substrait_rel(plan, &mut extensions)?))
     }];
 
     // Return parsed plan
