@@ -8,6 +8,7 @@ mod tests {
     use crate::{consumer::from_substrait_plan, producer::to_substrait_plan};
     use datafusion::error::Result;
     use datafusion::prelude::*;
+    use substrait::protobuf::extensions::simple_extension_declaration::MappingType;
 
     #[tokio::test]
     async fn simple_select() -> Result<()> {
@@ -22,6 +23,20 @@ mod tests {
     #[tokio::test]
     async fn select_with_filter() -> Result<()> {
         roundtrip("SELECT * FROM data WHERE a > 1").await
+    }
+
+    #[tokio::test]
+    async fn select_with_reused_functions() -> Result<()> {
+        let sql = "SELECT * FROM data WHERE a > 1 AND a < 10 AND b > 0";
+        roundtrip(sql).await?;
+        let (mut function_names, mut function_anchors) = function_extension_info(sql).await?;
+        function_names.sort();
+        function_anchors.sort();
+
+        assert_eq!(function_names, ["and", "gt", "lt"]);
+        assert_eq!(function_anchors, [0, 1, 2]);
+
+        Ok(())
     }
 
     #[tokio::test]
@@ -121,6 +136,26 @@ mod tests {
         let plan2str = format!("{:?}", plan2);
         assert_eq!(plan1str, plan2str);
         Ok(())
+    }
+
+    async fn function_extension_info(sql: &str) -> Result<(Vec<String>, Vec<u32>)>  {
+        let ctx = create_context().await?;
+        let df = ctx.sql(sql).await?;
+        let plan = df.to_logical_plan()?;
+        let proto = to_substrait_plan(&plan)?;
+
+        let mut function_names: Vec<String> = vec![];
+        let mut function_anchors: Vec<u32> = vec![];
+        for e in &proto.extensions {
+            let (function_anchor, function_name) = match e.mapping_type.as_ref().unwrap() {
+                MappingType::ExtensionFunction(ext_f) => (ext_f.function_anchor, &ext_f.name),
+                _ => unreachable!("Producer does not generate a non-function extension")
+            };
+            function_names.push(function_name.to_string());
+            function_anchors.push(function_anchor);
+        }
+        
+        Ok((function_names, function_anchors))
     }
 
     async fn create_context() -> Result<SessionContext> {

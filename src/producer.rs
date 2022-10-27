@@ -279,7 +279,6 @@ pub fn to_substrait_agg_measure(expr: &Expr, schema: &DFSchemaRef, extension_inf
     match expr {
         Expr::AggregateFunction { fun, args, distinct, filter } => {
             let mut arguments: Vec<FunctionArgument> = vec![];
-            let (extensions, function_set) = extension_info;
             for arg in args {
                 arguments.push(FunctionArgument { arg_type: Some(ArgType::Value(to_substrait_rex(arg, schema, extension_info)?)) });
             }
@@ -314,30 +313,29 @@ pub fn to_substrait_agg_measure(expr: &Expr, schema: &DFSchemaRef, extension_inf
 fn _register_function(function_name: String, extension_info: &mut (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>)) -> u32 {
     let (function_extensions, function_set) = extension_info;
     let function_name = function_name.to_lowercase();
-    let (function_extension, function_anchor) = match function_set.get(&function_name) {
+    let function_anchor = match function_set.get(&function_name) {
         Some(function_anchor) => {
             // Function has been registered
-            (ExtensionFunction {
-                extension_uri_reference: u32::MAX, // We do not currently need support fot extension uri, so u32::MAX is used to denote invalid reference
-                function_anchor: *function_anchor,
-                name: function_name,
-            }, *function_anchor)
+            *function_anchor
         },
         None => {
             // Function has NOT been registered
             let function_anchor = function_set.len() as u32;
             function_set.insert(function_name.clone(), function_anchor);
-            (ExtensionFunction {
+
+            let function_extension = ExtensionFunction {
                 extension_uri_reference: u32::MAX,
                 function_anchor: function_anchor,
                 name: function_name,
-            }, function_anchor)
+            };
+            let simple_extension = extensions::SimpleExtensionDeclaration {
+                mapping_type: Some(MappingType::ExtensionFunction(function_extension)),
+            };
+            function_extensions.push(simple_extension);
+            function_anchor
         }
     };
-    let simple_extension = extensions::SimpleExtensionDeclaration {
-        mapping_type: Some(MappingType::ExtensionFunction(function_extension)),
-    };
-    function_extensions.push(simple_extension);
+    
     // Return function anchor
     function_anchor
 
