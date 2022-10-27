@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use datafusion::{
     error::{DataFusionError, Result},
     logical_plan::{DFSchemaRef, Expr, JoinConstraint, LogicalPlan, Operator},
@@ -31,17 +33,19 @@ use substrait::protobuf::{
 /// Convert DataFusion LogicalPlan to Substrait Plan
 pub fn to_substrait_plan(plan: &LogicalPlan) -> Result<Box<Plan>> {
     // Parse relation nodes
-    let mut extensions: Vec<extensions::SimpleExtensionDeclaration> = vec![];
+    let mut extension_info: (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>) = (vec![], HashMap::new());
     // Generate PlanRel(s)
     // Note: Only 1 relation tree is currently supported
     let plan_rels = vec![PlanRel {
-        rel_type: Some(plan_rel::RelType::Rel(*to_substrait_rel(plan, &mut extensions)?))
+        rel_type: Some(plan_rel::RelType::Rel(*to_substrait_rel(plan, &mut extension_info)?))
     }];
+
+    let (function_extensions, _) = extension_info;
 
     // Return parsed plan
     Ok(Box::new(Plan {
         extension_uris: vec![],
-        extensions: extensions,
+        extensions: function_extensions,
         relations: plan_rels,
         advanced_extensions: None,
         expected_type_urls: vec![],
@@ -50,7 +54,7 @@ pub fn to_substrait_plan(plan: &LogicalPlan) -> Result<Box<Plan>> {
 }
 
 /// Convert DataFusion LogicalPlan to Substrait Rel
-pub fn to_substrait_rel(plan: &LogicalPlan, extensions: &mut Vec<extensions::SimpleExtensionDeclaration>) -> Result<Box<Rel>> {
+pub fn to_substrait_rel(plan: &LogicalPlan, extension_info: &mut (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>)) -> Result<Box<Rel>> {
     match plan {
         LogicalPlan::TableScan(scan) => {
             let projection = scan.projection.as_ref().map(|p| {
@@ -97,20 +101,20 @@ pub fn to_substrait_rel(plan: &LogicalPlan, extensions: &mut Vec<extensions::Sim
             let expressions = p
                 .expr
                 .iter()
-                .map(|e| to_substrait_rex(e, p.input.schema(), extensions))
+                .map(|e| to_substrait_rex(e, p.input.schema(), extension_info))
                 .collect::<Result<Vec<_>>>()?;
             Ok(Box::new(Rel {
                 rel_type: Some(RelType::Project(Box::new(ProjectRel {
                     common: None,
-                    input: Some(to_substrait_rel(p.input.as_ref(), extensions)?),
+                    input: Some(to_substrait_rel(p.input.as_ref(), extension_info)?),
                     expressions,
                     advanced_extension: None,
                 }))),
             }))
         }
         LogicalPlan::Filter(filter) => {
-            let input = to_substrait_rel(filter.input.as_ref(), extensions)?;
-            let filter_expr = to_substrait_rex(&filter.predicate, filter.input.schema(), extensions)?;
+            let input = to_substrait_rel(filter.input.as_ref(), extension_info)?;
+            let filter_expr = to_substrait_rex(&filter.predicate, filter.input.schema(), extension_info)?;
             Ok(Box::new(Rel {
                 rel_type: Some(RelType::Filter(Box::new(FilterRel {
                     common: None,
@@ -121,7 +125,7 @@ pub fn to_substrait_rel(plan: &LogicalPlan, extensions: &mut Vec<extensions::Sim
             }))
         }
         LogicalPlan::Limit(limit) => {
-            let input = to_substrait_rel(limit.input.as_ref(), extensions)?;
+            let input = to_substrait_rel(limit.input.as_ref(), extension_info)?;
             let limit_fetch = match limit.fetch {
                 Some(count) => count,
                 None => 0,
@@ -137,11 +141,11 @@ pub fn to_substrait_rel(plan: &LogicalPlan, extensions: &mut Vec<extensions::Sim
             }))
         }
         LogicalPlan::Sort(sort) => {
-            let input = to_substrait_rel(sort.input.as_ref(), extensions)?;
+            let input = to_substrait_rel(sort.input.as_ref(), extension_info)?;
             let sort_fields = sort
                 .expr
                 .iter()
-                .map(|e| substrait_sort_field(e, sort.input.schema(), extensions))
+                .map(|e| substrait_sort_field(e, sort.input.schema(), extension_info))
                 .collect::<Result<Vec<_>>>()?;
             Ok(Box::new(Rel {
                 rel_type: Some(RelType::Sort(Box::new(SortRel {
@@ -153,17 +157,17 @@ pub fn to_substrait_rel(plan: &LogicalPlan, extensions: &mut Vec<extensions::Sim
             }))
         }
         LogicalPlan::Aggregate(agg) => {
-            let input = to_substrait_rel(agg.input.as_ref(), extensions)?;
+            let input = to_substrait_rel(agg.input.as_ref(), extension_info)?;
             // Translate aggregate expression to Substrait's groupings (repeated repeated Expression)
             let grouping = agg
                 .group_expr
                 .iter()
-                .map(|e| to_substrait_rex(e, agg.input.schema(), extensions))
+                .map(|e| to_substrait_rex(e, agg.input.schema(), extension_info))
                 .collect::<Result<Vec<_>>>()?;
             let measures = agg
                 .aggr_expr
                 .iter()
-                .map(|e| to_substrait_agg_measure(e, agg.input.schema(), extensions))
+                .map(|e| to_substrait_agg_measure(e, agg.input.schema(), extension_info))
                 .collect::<Result<Vec<_>>>()?;
             
             Ok(Box::new(Rel {
@@ -177,8 +181,8 @@ pub fn to_substrait_rel(plan: &LogicalPlan, extensions: &mut Vec<extensions::Sim
             }))
         }
         LogicalPlan::Join(join) => {
-            let left = to_substrait_rel(join.left.as_ref(), extensions)?;
-            let right = to_substrait_rel(join.right.as_ref(), extensions)?;
+            let left = to_substrait_rel(join.left.as_ref(), extension_info)?;
+            let right = to_substrait_rel(join.right.as_ref(), extension_info)?;
             let join_type = match join.join_type {
                 JoinType::Inner => 1,
                 JoinType::Left => 2,
@@ -221,7 +225,7 @@ pub fn to_substrait_rel(plan: &LogicalPlan, extensions: &mut Vec<extensions::Sim
                         left: Some(left),
                         right: Some(right),
                         r#type: join_type,
-                        expression: Some(Box::new(to_substrait_rex(&e, &join.schema, extensions)?)),
+                        expression: Some(Box::new(to_substrait_rex(&e, &join.schema, extension_info)?)),
                         post_join_filter: None,
                         advanced_extension: None,
                     }))),
@@ -271,23 +275,16 @@ pub fn operator_to_name(op: Operator) -> &'static str {
     }
 }
 
-pub fn to_substrait_agg_measure(expr: &Expr, schema: &DFSchemaRef, extensions: &mut Vec<extensions::SimpleExtensionDeclaration>) -> Result<Measure> {
+pub fn to_substrait_agg_measure(expr: &Expr, schema: &DFSchemaRef, extension_info: &mut (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>)) -> Result<Measure> {
     match expr {
         Expr::AggregateFunction { fun, args, distinct, filter } => {
             let mut arguments: Vec<FunctionArgument> = vec![];
+            let (extensions, function_set) = extension_info;
             for arg in args {
-                arguments.push(FunctionArgument { arg_type: Some(ArgType::Value(to_substrait_rex(arg, schema, extensions)?)) });
+                arguments.push(FunctionArgument { arg_type: Some(ArgType::Value(to_substrait_rex(arg, schema, extension_info)?)) });
             }
             let function_name = fun.to_string().to_lowercase();
-            let extension_function = ExtensionFunction {
-                extension_uri_reference: extensions.len() as u32,
-                function_anchor: extensions.len() as u32,
-                name: function_name.to_string(),
-            };
-            let extension = extensions::SimpleExtensionDeclaration {
-                mapping_type: Some(MappingType::ExtensionFunction(extension_function)),
-            };
-            extensions.push(extension);
+            _register_function(function_name, extension_info);
             Ok(Measure {
                 measure: Some(AggregateFunction {
                     function_reference: 0,
@@ -302,7 +299,7 @@ pub fn to_substrait_agg_measure(expr: &Expr, schema: &DFSchemaRef, extensions: &
                     args: vec![],
                 }),
                 filter: match filter {
-                    Some(f) => Some(to_substrait_rex(f, schema, extensions)?),
+                    Some(f) => Some(to_substrait_rex(f, schema, extension_info)?),
                     None => None
                 }
             })
@@ -314,31 +311,54 @@ pub fn to_substrait_agg_measure(expr: &Expr, schema: &DFSchemaRef, extensions: &
     }
 }
 
+fn _register_function(function_name: String, extension_info: &mut (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>)) -> u32 {
+    let (function_extensions, function_set) = extension_info;
+    let function_name = function_name.to_lowercase();
+    let (function_extension, function_anchor) = match function_set.get(&function_name) {
+        Some(function_anchor) => {
+            // Function has been registered
+            (ExtensionFunction {
+                extension_uri_reference: u32::MAX, // We do not currently need support fot extension uri, so u32::MAX is used to denote invalid reference
+                function_anchor: *function_anchor,
+                name: function_name,
+            }, *function_anchor)
+        },
+        None => {
+            // Function has NOT been registered
+            let function_anchor = function_set.len() as u32;
+            function_set.insert(function_name.clone(), function_anchor);
+            (ExtensionFunction {
+                extension_uri_reference: u32::MAX,
+                function_anchor: function_anchor,
+                name: function_name,
+            }, function_anchor)
+        }
+    };
+    let simple_extension = extensions::SimpleExtensionDeclaration {
+        mapping_type: Some(MappingType::ExtensionFunction(function_extension)),
+    };
+    function_extensions.push(simple_extension);
+    // Return function anchor
+    function_anchor
+
+}
+
 /// Convert DataFusion Expr to Substrait Rex
-pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef, extensions: &mut Vec<extensions::SimpleExtensionDeclaration>) -> Result<Expression> {
+pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef, extension_info: &mut (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>)) -> Result<Expression> {
     match expr {
         Expr::Column(col) => {
             let index = schema.index_of_column(&col)?;
             substrait_field_ref(index)
         }
         Expr::BinaryExpr { left, op, right } => {
-            let l = to_substrait_rex(left, schema, extensions)?;
-            let r = to_substrait_rex(right, schema, extensions)?;
-            let function_name = operator_to_name(*op);
+            let l = to_substrait_rex(left, schema, extension_info)?;
+            let r = to_substrait_rex(right, schema, extension_info)?;
+            let function_name = operator_to_name(*op).to_string().to_lowercase();
             // To prevent ambiguous references between ScalarFunctions and AggregateFunctions,
             // a plan-relative identifier starting from 0 is used as the function_anchor.
             // The consumer is responsible for correctly registering <function_anchor,function_name>
             // mapping info stored in the extensions by the producer.
-            let function_anchor = extensions.len() as u32;
-            let extension_function = ExtensionFunction {
-                extension_uri_reference: extensions.len() as u32,
-                function_anchor: function_anchor,
-                name: function_name.to_string(),
-            };
-            let extension = extensions::SimpleExtensionDeclaration {
-                mapping_type: Some(MappingType::ExtensionFunction(extension_function)),
-            };
-            extensions.push(extension);
+            let function_anchor = _register_function(function_name, extension_info);
             Ok(Expression {
                 rex_type: Some(RexType::ScalarFunction(ScalarFunction {
                     function_reference: function_anchor,
@@ -391,10 +411,10 @@ pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef, extensions: &mut Vec<
     }
 }
 
-fn substrait_sort_field(expr: &Expr, schema: &DFSchemaRef, extensions: &mut Vec<extensions::SimpleExtensionDeclaration>) -> Result<SortField> {
+fn substrait_sort_field(expr: &Expr, schema: &DFSchemaRef, extension_info: &mut (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>)) -> Result<SortField> {
     match expr {
         Expr::Sort { expr, asc, nulls_first } => {
-            let e = to_substrait_rex(expr, schema, extensions)?;
+            let e = to_substrait_rex(expr, schema, extension_info)?;
             let d = match (asc, nulls_first) {
                 (true, true) => SortDirection::AscNullsFirst,
                 (true, false) => SortDirection::AscNullsLast,
