@@ -217,7 +217,7 @@ pub async fn from_substrait_rel(ctx: &mut SessionContext, rel: &Rel, extensions:
                     }
                 };
 
-                for e in &groupings.unwrap().grouping_expressions {
+                for e in &groupings?.grouping_expressions {
                     let x = from_substrait_rex(&e, &input.schema(), extensions).await?;
                     group_expr.push(x.as_ref().clone());
                 }
@@ -234,13 +234,13 @@ pub async fn from_substrait_rel(ctx: &mut SessionContext, rel: &Rel, extensions:
                                 _ if f.invocation == AggregationInvocation::All as i32 => false,
                                 _ => false
                             };
-                            Ok(from_substrait_agg_func(&f, &input.schema(), extensions, filter, distinct).await?)
+                            from_substrait_agg_func(&f, &input.schema(), extensions, filter, distinct).await
                         },
                         None => Err(DataFusionError::NotImplemented(
                             "Aggregate without aggregate function is not supported".to_string(),
                         )),
                     };
-                    aggr_expr.push(agg_func.unwrap().as_ref().clone());
+                    aggr_expr.push(agg_func?.as_ref().clone());
                 }
 
                 input.aggregate(group_expr, aggr_expr)
@@ -350,12 +350,12 @@ pub async fn from_substrait_agg_func(
     let mut args: Vec<Expr> = vec![];
     for arg in &f.arguments {
         let arg_expr = match &arg.arg_type {
-            Some(ArgType::Value(e)) => Ok(from_substrait_rex(e, input_schema, extensions).await?),
+            Some(ArgType::Value(e)) => from_substrait_rex(e, input_schema, extensions).await,
             _ => Err(DataFusionError::NotImplemented(
                     "Aggregated function argument non-Value type not supported".to_string(),
                 ))
         };
-        args.push(arg_expr.unwrap().as_ref().clone());
+        args.push(arg_expr?.as_ref().clone());
     }
 
     let fun = match extensions.get(&f.function_reference) {
