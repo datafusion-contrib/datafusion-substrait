@@ -388,15 +388,20 @@ pub async fn from_substrait_rex(e: &Expression, input_schema: &DFSchema, extensi
     match &e.rex_type {
         Some(RexType::Selection(field_ref)) => match &field_ref.reference_type {
             Some(DirectReference(direct)) => match &direct.reference_type.as_ref() {
-                Some(StructField(x)) => Ok(Arc::new(Expr::Column(Column {
-                    relation: None,
-                    name: input_schema
-                        .field(x.field as usize)
-                        .name()
-                        .to_string(),
-                }))),
+                Some(StructField(x)) => match &x.child.as_ref() {
+                    Some(_) => Err(DataFusionError::NotImplemented(
+                        "Direct reference StructField with child is not supported".to_string(),
+                    )),
+                    None => Ok(Arc::new(Expr::Column(Column {
+                        relation: None,
+                        name: input_schema
+                            .field(x.field as usize)
+                            .name()
+                            .to_string(),
+                    }))),
+                },
                 _ => Err(DataFusionError::NotImplemented(
-                    "direct reference with types other than StructField is not supported".to_string(),
+                    "Direct reference with types other than StructField is not supported".to_string(),
                 )),
             },
             _ => Err(DataFusionError::NotImplemented(
