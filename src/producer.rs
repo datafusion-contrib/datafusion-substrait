@@ -319,6 +319,10 @@ pub fn to_substrait_agg_measure(expr: &Expr, schema: &DFSchemaRef, extension_inf
 fn _register_function(function_name: String, extension_info: &mut (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>)) -> u32 {
     let (function_extensions, function_set) = extension_info;
     let function_name = function_name.to_lowercase();
+    // To prevent ambiguous references between ScalarFunctions and AggregateFunctions,
+    // a plan-relative identifier starting from 0 is used as the function_anchor.
+    // The consumer is responsible for correctly registering <function_anchor,function_name>
+    // mapping info stored in the extensions by the producer.
     let function_anchor = match function_set.get(&function_name) {
         Some(function_anchor) => {
             // Function has been registered
@@ -347,6 +351,7 @@ fn _register_function(function_name: String, extension_info: &mut (Vec<extension
 
 }
 
+/// Return Substrait scalar function with two arguments
 pub fn make_binary_op_scalar_func(lhs: &Expression, rhs: &Expression, op: Operator, extension_info: &mut (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>)) -> Expression {
     let function_name = operator_to_name(op).to_string().to_lowercase();
     let function_anchor = _register_function(function_name, extension_info);
@@ -403,27 +408,8 @@ pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef, extension_info: &mut 
         Expr::BinaryExpr { left, op, right } => {
             let l = to_substrait_rex(left, schema, extension_info)?;
             let r = to_substrait_rex(right, schema, extension_info)?;
-            let function_name = operator_to_name(*op).to_string().to_lowercase();
-            // To prevent ambiguous references between ScalarFunctions and AggregateFunctions,
-            // a plan-relative identifier starting from 0 is used as the function_anchor.
-            // The consumer is responsible for correctly registering <function_anchor,function_name>
-            // mapping info stored in the extensions by the producer.
-            let function_anchor = _register_function(function_name, extension_info);
-            Ok(Expression {
-                rex_type: Some(RexType::ScalarFunction(ScalarFunction {
-                    function_reference: function_anchor,
-                    arguments: vec![
-                        FunctionArgument {
-                            arg_type: Some(ArgType::Value(l)),
-                        },
-                        FunctionArgument {
-                            arg_type: Some(ArgType::Value(r)),
-                        },
-                    ],
-                    output_type: None,
-                    args: vec![],
-                })),
-            })
+
+            Ok(make_binary_op_scalar_func(&l, &r, *op, extension_info))
         }
         Expr::Literal(value) => {
             let literal_type = match value {
