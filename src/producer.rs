@@ -371,17 +371,17 @@ pub fn make_binary_op_scalar_func(lhs: &Expression, rhs: &Expression, op: Operat
 pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef, extension_info: &mut (Vec<extensions::SimpleExtensionDeclaration>, HashMap<String, u32>)) -> Result<Expression> {
     match expr {
         Expr::Between { expr, negated, low, high } => {
-            let l_expr;
-            let r_expr;
             match negated {
                 true => {
-                    // `expr NOT BETWEEN low AND high` can be translated into (expr < low AND high < expr)
+                    // `expr NOT BETWEEN low AND high` can be translated into (expr < low OR high < expr)
                     let substriat_expr = to_substrait_rex(expr, schema, extension_info)?;
                     let substrait_low = to_substrait_rex(low, schema, extension_info)?;
                     let substrait_high = to_substrait_rex(high, schema, extension_info)?;
 
-                    l_expr = make_binary_op_scalar_func(&substriat_expr, &substrait_low, Operator::Lt, extension_info);
-                    r_expr = make_binary_op_scalar_func(&substrait_high, &substriat_expr, Operator::Lt, extension_info);
+                    let l_expr = make_binary_op_scalar_func(&substriat_expr, &substrait_low, Operator::Lt, extension_info);
+                    let r_expr = make_binary_op_scalar_func(&substrait_high, &substriat_expr, Operator::Lt, extension_info);
+
+                    Ok(make_binary_op_scalar_func(&l_expr, &r_expr, Operator::Or, extension_info))
                 }
                 false => {
                     // `expr BETWEEN low AND high` can be translated into (low <= expr AND expr <= high)
@@ -389,11 +389,12 @@ pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef, extension_info: &mut 
                     let substrait_low = to_substrait_rex(low, schema, extension_info)?;
                     let substrait_high = to_substrait_rex(high, schema, extension_info)?;
 
-                    l_expr = make_binary_op_scalar_func(&substrait_low, &substriat_expr, Operator::LtEq, extension_info);
-                    r_expr = make_binary_op_scalar_func(&substriat_expr, &substrait_high, Operator::LtEq, extension_info);
+                    let l_expr = make_binary_op_scalar_func(&substrait_low, &substriat_expr, Operator::LtEq, extension_info);
+                    let r_expr = make_binary_op_scalar_func(&substriat_expr, &substrait_high, Operator::LtEq, extension_info);
+
+                    Ok(make_binary_op_scalar_func(&l_expr, &r_expr, Operator::And, extension_info))
                 }
             }
-            Ok(make_binary_op_scalar_func(&l_expr, &r_expr, Operator::And, extension_info))
         }
         Expr::Column(col) => {
             let index = schema.index_of_column(&col)?;
