@@ -132,7 +132,11 @@ mod tests {
 
     #[tokio::test]
     async fn case_with_base_expression() -> Result<()> {
-        roundtrip("SELECT (CASE a WHEN 0 THEN 'zero' ELSE 'not-zero' END) FROM data").await
+        roundtrip("SELECT (CASE a
+                            WHEN 0 THEN 'zero'
+                            WHEN 1 THEN 'one'
+                            ELSE 'other'
+                           END) FROM data").await
     }
 
     #[tokio::test]
