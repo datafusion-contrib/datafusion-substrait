@@ -435,14 +435,11 @@ pub fn to_substrait_rex(expr: &Expr, schema: &DFSchemaRef, extension_info: &mut 
         Expr::Case { expr, when_then_expr, else_expr } => {
             let mut ifs: Vec<IfClause> = vec![];
             // Parse base
-            match expr {
-                Some(e) => { // Base expression exists
-                    ifs.push(IfClause {
-                        r#if: Some(to_substrait_rex(e, schema, extension_info)?),
-                        then: None,
-                    });
-                },
-                None => () // No base expression
+            if let Some(e) = expr { // Base expression exists
+                ifs.push(IfClause {
+                    r#if: Some(to_substrait_rex(e, schema, extension_info)?),
+                    then: None,
+                });
             }
             // Parse `when`s
             for (r#if, then) in when_then_expr {

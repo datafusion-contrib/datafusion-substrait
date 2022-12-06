@@ -416,12 +416,9 @@ pub async fn from_substrait_rex(e: &Expression, input_schema: &DFSchema, extensi
             for (i, if_expr) in if_then.ifs.iter().enumerate() {
                 if i == 0 {
                     // Check if the first element is type base expression
-                    match if_expr.then {
-                        Some(_) => (),
-                        None => {
-                            expr = Some(Box::new(from_substrait_rex(&if_expr.r#if.as_ref().unwrap(), input_schema, extensions).await?.as_ref().clone()));
-                            continue;
-                        },
+                    if if_expr.then.is_none() {
+                        expr = Some(Box::new(from_substrait_rex(&if_expr.r#if.as_ref().unwrap(), input_schema, extensions).await?.as_ref().clone()));
+                        continue;
                     }
                 }
                 when_then_expr.push(
