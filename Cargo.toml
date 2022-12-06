@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 datafusion = "13.0"
+datafusion-sql = "13.0"
 substrait = "0.2"
 tokio = "1.17"
 async-recursion = "1.0"
