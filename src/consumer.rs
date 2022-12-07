@@ -316,8 +316,7 @@ pub async fn from_substrait_rel(
                     }
                 })
                 .collect::<Result<Vec<_>>>()?;
-            let left_cols: Vec<Column> = pairs.iter().map(|(l, _)| l.clone()).collect();
-            let right_cols: Vec<Column> = pairs.iter().map(|(_, r)| r.clone()).collect();
+            let (left_cols, right_cols): (Vec<_>, Vec<_>) = pairs.iter().cloned().unzip();
             left.join(&right, join_type, (left_cols, right_cols), None)?
                 .build()
         }
