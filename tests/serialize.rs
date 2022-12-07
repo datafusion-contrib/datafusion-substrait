@@ -23,8 +23,9 @@ mod tests {
         // Read substrait plan from file
         let proto = serializer::deserialize(path).await?;
         // Check plan equality
-        let df = from_substrait_plan(&mut ctx, &proto).await?;
-        let plan = df.to_logical_plan()?;
+        let plan = from_substrait_plan(&mut ctx, &proto).await?;
+        let plan = ctx.optimize(&plan)?;
+
         let plan_str_ref = format!("{:?}", plan_ref);
         let plan_str = format!("{:?}", plan);
         assert_eq!(plan_str_ref, plan_str);
