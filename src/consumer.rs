@@ -11,7 +11,7 @@ use datafusion::{
     scalar::ScalarValue,
 };
 
-use datafusion_sql::TableReference;
+use datafusion::sql::TableReference;
 use substrait::protobuf::{
     aggregate_function::AggregationInvocation,
     expression::{
