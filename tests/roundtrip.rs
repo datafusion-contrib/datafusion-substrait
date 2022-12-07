@@ -1,7 +1,6 @@
 use datafusion_substrait::consumer;
 use datafusion_substrait::producer;
 
-
 #[cfg(test)]
 mod tests {
 
@@ -79,7 +78,8 @@ mod tests {
         test_alias(
             "SELECT * FROM (SELECT distinct a FROM data)", // `SELECT *` is used to add `projection` at the root
             "SELECT a FROM data GROUP BY a",
-        ).await
+        )
+        .await
     }
 
     #[tokio::test]
@@ -87,15 +87,13 @@ mod tests {
         test_alias(
             "SELECT * FROM (SELECT distinct a, b FROM data)", // `SELECT *` is used to add `projection` at the root
             "SELECT a, b FROM data GROUP BY a, b",
-        ).await
+        )
+        .await
     }
 
     #[tokio::test]
     async fn simple_alias() -> Result<()> {
-        test_alias(
-            "SELECT d1.a, d1.b FROM data d1",
-            "SELECT a, b FROM data",
-        ).await
+        test_alias("SELECT d1.a, d1.b FROM data d1", "SELECT a, b FROM data").await
     }
 
     #[tokio::test]
@@ -111,7 +109,7 @@ mod tests {
     async fn between_integers() -> Result<()> {
         test_alias(
             "SELECT * FROM data WHERE a BETWEEN 2 AND 6",
-            "SELECT * FROM data WHERE a >= 2 AND a <= 6"
+            "SELECT * FROM data WHERE a >= 2 AND a <= 6",
         )
         .await
     }
@@ -120,7 +118,7 @@ mod tests {
     async fn not_between_integers() -> Result<()> {
         test_alias(
             "SELECT * FROM data WHERE a NOT BETWEEN 2 AND 6",
-            "SELECT * FROM data WHERE a < 2 OR a > 6"
+            "SELECT * FROM data WHERE a < 2 OR a > 6",
         )
         .await
     }
@@ -132,11 +130,14 @@ mod tests {
 
     #[tokio::test]
     async fn case_with_base_expression() -> Result<()> {
-        roundtrip("SELECT (CASE a
+        roundtrip(
+            "SELECT (CASE a
                             WHEN 0 THEN 'zero'
                             WHEN 1 THEN 'one'
                             ELSE 'other'
-                           END) FROM data").await
+                           END) FROM data",
+        )
+        .await
     }
 
     #[tokio::test]
@@ -193,11 +194,15 @@ mod tests {
 
         let df_a = ctx.sql(sql_with_alias).await?;
         let proto_a = to_substrait_plan(&df_a.to_logical_plan()?)?;
-        let plan_with_alias = from_substrait_plan(&mut ctx, &proto_a).await?.to_logical_plan()?;
+        let plan_with_alias = from_substrait_plan(&mut ctx, &proto_a)
+            .await?
+            .to_logical_plan()?;
 
         let df = ctx.sql(sql_no_alias).await?;
         let proto = to_substrait_plan(&df.to_logical_plan()?)?;
-        let plan = from_substrait_plan(&mut ctx, &proto).await?.to_logical_plan()?;
+        let plan = from_substrait_plan(&mut ctx, &proto)
+            .await?
+            .to_logical_plan()?;
 
         println!("{:#?}", plan_with_alias);
         println!("{:#?}", plan);
@@ -226,7 +231,7 @@ mod tests {
         Ok(())
     }
 
-    async fn function_extension_info(sql: &str) -> Result<(Vec<String>, Vec<u32>)>  {
+    async fn function_extension_info(sql: &str) -> Result<(Vec<String>, Vec<u32>)> {
         let ctx = create_context().await?;
         let df = ctx.sql(sql).await?;
         let plan = df.to_logical_plan()?;
@@ -237,12 +242,12 @@ mod tests {
         for e in &proto.extensions {
             let (function_anchor, function_name) = match e.mapping_type.as_ref().unwrap() {
                 MappingType::ExtensionFunction(ext_f) => (ext_f.function_anchor, &ext_f.name),
-                _ => unreachable!("Producer does not generate a non-function extension")
+                _ => unreachable!("Producer does not generate a non-function extension"),
             };
             function_names.push(function_name.to_string());
             function_anchors.push(function_anchor);
         }
-        
+
         Ok((function_names, function_anchors))
     }
 
