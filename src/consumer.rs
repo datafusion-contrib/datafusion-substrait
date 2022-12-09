@@ -20,6 +20,7 @@ use substrait::protobuf::{
     },
     extensions::simple_extension_declaration::MappingType,
     function_argument::ArgType,
+    join_rel,
     read_rel::ReadType,
     rel::RelType,
     sort_field::{SortDirection, SortKind::*},
@@ -280,15 +281,7 @@ pub async fn from_substrait_rel(
                 from_substrait_rel(ctx, &join.left.as_ref().unwrap(), extensions).await?,
             );
             let right = from_substrait_rel(ctx, &join.right.as_ref().unwrap(), extensions).await?;
-            let join_type = match join.r#type {
-                1 => JoinType::Inner,
-                2 => JoinType::Left,
-                3 => JoinType::Right,
-                4 => JoinType::Full,
-                5 => JoinType::Anti,
-                6 => JoinType::Semi,
-                _ => return Err(DataFusionError::Internal("invalid join type".to_string())),
-            };
+            let join_type = from_substrait_jointype(join.r#type)?;
             let mut predicates = vec![];
             let schema = build_join_schema(&left.schema(), &right.schema(), &JoinType::Inner)?;
             let on =
@@ -417,6 +410,19 @@ pub async fn from_substrait_agg_func(
         distinct: distinct,
         filter: filter,
     }))
+}
+
+
+fn from_substrait_jointype(join_type: i32) -> Result<JoinType> {
+    match join_type {
+        x if x == join_rel::JoinType::Inner as i32 => Ok(JoinType::Inner),
+        x if x == join_rel::JoinType::Left as i32 => Ok(JoinType::Left),
+        x if x == join_rel::JoinType::Right as i32 => Ok(JoinType::Right),
+        x if x == join_rel::JoinType::Outer as i32 => Ok(JoinType::Full),
+        x if x == join_rel::JoinType::Anti as i32 => Ok(JoinType::Anti),
+        x if x == join_rel::JoinType::Semi as i32 => Ok(JoinType::Semi),
+        _ => return Err(DataFusionError::Internal("invalid join type".to_string())),
+    }
 }
 
 /// Convert Substrait Rex to DataFusion Expr
