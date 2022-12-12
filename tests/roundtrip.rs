@@ -147,6 +147,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn aggregate_case() -> Result<()> {
+        assert_expected_plan(
+            "SELECT SUM(CASE WHEN a > 0 THEN 1 ELSE NULL END) FROM data",
+            "Projection: SUM(CASE WHEN data.a > Int64(0) THEN Int64(1) ELSE Int64(NULL) END)\
+            \n  Aggregate: groupBy=[[]], aggr=[[SUM(CASE WHEN data.a > Int64(0) THEN Int64(1) ELSE Int64(NULL) END)]]\
+            \n    TableScan: data projection=[a]",
+        )
+        .await
+    }
+
+    #[tokio::test]
     async fn roundtrip_inner_join() -> Result<()> {
         roundtrip("SELECT data.a FROM data JOIN data2 ON data.a = data2.a").await
     }
