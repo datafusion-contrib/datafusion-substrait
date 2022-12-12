@@ -572,8 +572,8 @@ pub fn to_substrait_rex(
                 ScalarValue::Boolean(Some(b)) => Some(LiteralType::Boolean(*b)),
                 ScalarValue::Float32(Some(f)) => Some(LiteralType::Fp32(*f)),
                 ScalarValue::Float64(Some(f)) => Some(LiteralType::Fp64(*f)),
-                ScalarValue::Decimal128(v, p, s) => Some(LiteralType::Decimal(Decimal {
-                    value: v.unwrap().to_le_bytes().to_vec(),
+                ScalarValue::Decimal128(Some(v), p, s) => Some(LiteralType::Decimal(Decimal {
+                    value: v.to_le_bytes().to_vec(),
                     precision: *p as i32,
                     scale: *s as i32,
                 })),
@@ -624,6 +624,14 @@ fn try_to_substrait_null(v: &ScalarValue) -> Result<LiteralType> {
         })),
         ScalarValue::Int64(None) => Ok(LiteralType::Null(substrait::protobuf::Type {
             kind: Some(r#type::Kind::I64(r#type::I64 {
+                type_variation_reference: default_type_ref,
+                nullability: default_nullability,
+            })),
+        })),
+        ScalarValue::Decimal128(None, p, s) => Ok(LiteralType::Null(substrait::protobuf::Type {
+            kind: Some(r#type::Kind::Decimal(r#type::Decimal {
+                scale: *s as i32,
+                precision: *p as i32,
                 type_variation_reference: default_type_ref,
                 nullability: default_nullability,
             })),

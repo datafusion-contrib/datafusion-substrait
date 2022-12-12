@@ -620,6 +620,11 @@ fn from_substrait_null(null_type: &Type) -> Result<ScalarValue> {
             r#type::Kind::I16(_) => Ok(ScalarValue::Int16(None)),
             r#type::Kind::I32(_) => Ok(ScalarValue::Int32(None)),
             r#type::Kind::I64(_) => Ok(ScalarValue::Int64(None)),
+            r#type::Kind::Decimal(d) => Ok(ScalarValue::Decimal128(
+                None,
+                d.precision as u8,
+                d.scale as u8,
+            )),
             _ => Err(DataFusionError::NotImplemented(format!(
                 "Unsupported null kind: {:?}",
                 kind

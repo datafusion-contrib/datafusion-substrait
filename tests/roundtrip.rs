@@ -80,6 +80,11 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn null_decimal_literal() -> Result<()> {
+        roundtrip("SELECT * FROM data WHERE b = NULL").await
+    }
+
+    #[tokio::test]
     async fn simple_distinct() -> Result<()> {
         test_alias(
             "SELECT * FROM (SELECT distinct a FROM data)", // `SELECT *` is used to add `projection` at the root
