@@ -5,6 +5,7 @@ use datafusion_substrait::producer;
 mod tests {
 
     use crate::{consumer::from_substrait_plan, producer::to_substrait_plan};
+    use datafusion::arrow::datatypes::{DataType, Field, Schema};
     use datafusion::error::Result;
     use datafusion::prelude::*;
     use substrait::protobuf::extensions::simple_extension_declaration::MappingType;
@@ -71,6 +72,11 @@ mod tests {
     #[tokio::test]
     async fn aggregate_multiple_keys() -> Result<()> {
         roundtrip("SELECT a, c, avg(b) FROM data GROUP BY a, c").await
+    }
+
+    #[tokio::test]
+    async fn decimal_literal() -> Result<()> {
+        roundtrip("SELECT * FROM data WHERE b > 2.5").await
     }
 
     #[tokio::test]
@@ -156,7 +162,7 @@ mod tests {
         )
         .await
     }
-    
+
     #[tokio::test]
     async fn roundtrip_left_join() -> Result<()> {
         roundtrip("SELECT data.a FROM data LEFT JOIN data2 ON data.a = data2.a").await
@@ -261,7 +267,15 @@ mod tests {
 
     async fn create_context() -> Result<SessionContext> {
         let ctx = SessionContext::new();
-        ctx.register_csv("data", "tests/testdata/data.csv", CsvReadOptions::new())
+        let mut explicit_options = CsvReadOptions::new();
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int64, true),
+            Field::new("b", DataType::Decimal128(5, 2), true),
+            Field::new("c", DataType::Date32, true),
+            Field::new("d", DataType::Boolean, true),
+        ]);
+        explicit_options.schema = Some(&schema);
+        ctx.register_csv("data", "tests/testdata/data.csv", explicit_options)
             .await?;
         ctx.register_csv("data2", "tests/testdata/data.csv", CsvReadOptions::new())
             .await?;
