@@ -412,7 +412,6 @@ pub async fn from_substrait_agg_func(
     }))
 }
 
-
 fn from_substrait_jointype(join_type: i32) -> Result<JoinType> {
     if let Some(substrait_join_type) = join_rel::JoinType::from_i32(join_type) {
         match substrait_join_type {
@@ -422,10 +421,18 @@ fn from_substrait_jointype(join_type: i32) -> Result<JoinType> {
             join_rel::JoinType::Outer => Ok(JoinType::Full),
             join_rel::JoinType::Anti => Ok(JoinType::Anti),
             join_rel::JoinType::Semi => Ok(JoinType::Semi),
-            _ => return Err(DataFusionError::Internal(format!("unsupported join type {:?}", substrait_join_type))),
+            _ => {
+                return Err(DataFusionError::Internal(format!(
+                    "unsupported join type {:?}",
+                    substrait_join_type
+                )))
+            }
         }
     } else {
-        return Err(DataFusionError::Internal(format!("invalid join type variant {:?}", join_type)))
+        return Err(DataFusionError::Internal(format!(
+            "invalid join type variant {:?}",
+            join_type
+        )));
     }
 }
 
@@ -576,6 +583,13 @@ pub async fn from_substrait_rex(
             Some(LiteralType::Fp64(f)) => {
                 Ok(Arc::new(Expr::Literal(ScalarValue::Float64(Some(*f)))))
             }
+            Some(LiteralType::Decimal(d)) => Ok(Arc::new(Expr::Literal(ScalarValue::Decimal128(
+                Some(std::primitive::i128::from_le_bytes(
+                    d.value.clone().try_into().unwrap(),
+                )),
+                d.precision.try_into().unwrap(),
+                d.scale.try_into().unwrap(),
+            )))),
             Some(LiteralType::String(s)) => {
                 Ok(Arc::new(Expr::Literal(ScalarValue::Utf8(Some(s.clone())))))
             }
