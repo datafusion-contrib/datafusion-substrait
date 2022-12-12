@@ -414,14 +414,18 @@ pub async fn from_substrait_agg_func(
 
 
 fn from_substrait_jointype(join_type: i32) -> Result<JoinType> {
-    match join_type {
-        x if x == join_rel::JoinType::Inner as i32 => Ok(JoinType::Inner),
-        x if x == join_rel::JoinType::Left as i32 => Ok(JoinType::Left),
-        x if x == join_rel::JoinType::Right as i32 => Ok(JoinType::Right),
-        x if x == join_rel::JoinType::Outer as i32 => Ok(JoinType::Full),
-        x if x == join_rel::JoinType::Anti as i32 => Ok(JoinType::Anti),
-        x if x == join_rel::JoinType::Semi as i32 => Ok(JoinType::Semi),
-        _ => return Err(DataFusionError::Internal("invalid join type".to_string())),
+    if let Some(substrait_join_type) = join_rel::JoinType::from_i32(join_type) {
+        match substrait_join_type {
+            join_rel::JoinType::Inner => Ok(JoinType::Inner),
+            join_rel::JoinType::Left => Ok(JoinType::Left),
+            join_rel::JoinType::Right => Ok(JoinType::Right),
+            join_rel::JoinType::Outer => Ok(JoinType::Full),
+            join_rel::JoinType::Anti => Ok(JoinType::Anti),
+            join_rel::JoinType::Semi => Ok(JoinType::Semi),
+            _ => return Err(DataFusionError::Internal(format!("unsupported join type {:?}", substrait_join_type))),
+        }
+    } else {
+        return Err(DataFusionError::Internal(format!("invalid join type variant {:?}", join_type)))
     }
 }
 
