@@ -221,7 +221,7 @@ pub fn to_substrait_rel(
         LogicalPlan::Join(join) => {
             let left = to_substrait_rel(join.left.as_ref(), extension_info)?;
             let right = to_substrait_rel(join.right.as_ref(), extension_info)?;
-            let join_type = to_substrait_jointype(join.join_type);
+            let join_type = to_substrait_jointype(join.join_type)?;
             // we only support basic joins so return an error for anything not yet supported
             if join.null_equals_null {
                 return Err(DataFusionError::NotImplemented(
@@ -372,15 +372,18 @@ pub fn to_substrait_agg_measure(
     }
 }
 
-fn to_substrait_jointype(join_type: JoinType) -> join_rel::JoinType {
+fn to_substrait_jointype(join_type: JoinType) -> Result<join_rel::JoinType> {
     match join_type {
-        JoinType::Inner => join_rel::JoinType::Inner,
-        JoinType::Left => join_rel::JoinType::Left,
-        JoinType::Right => join_rel::JoinType::Right,
-        JoinType::Full => join_rel::JoinType::Outer,
-        JoinType::LeftAnti => join_rel::JoinType::Anti,
-        JoinType::LeftSemi => join_rel::JoinType::Semi,
-        _ => todo!(),
+        JoinType::Inner => Ok(join_rel::JoinType::Inner),
+        JoinType::Left => Ok(join_rel::JoinType::Left),
+        JoinType::Right => Ok(join_rel::JoinType::Right),
+        JoinType::Full => Ok(join_rel::JoinType::Outer),
+        JoinType::LeftAnti => Ok(join_rel::JoinType::Anti),
+        JoinType::LeftSemi => Ok(join_rel::JoinType::Semi),
+        _ => Err(DataFusionError::NotImplemented(format!(
+            "Unsupported join type: {}",
+            join_type
+        ))),
     }
 }
 
