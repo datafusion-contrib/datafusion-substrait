@@ -193,6 +193,19 @@ mod tests {
     async fn roundtrip_outer_join() -> Result<()> {
         roundtrip("SELECT data.a FROM data FULL OUTER JOIN data2 ON data.a = data2.a").await
     }
+    #[tokio::test]
+    async fn simple_intersect() -> Result<()> {
+        assert_expected_plan(
+            "SELECT COUNT(*) FROM (SELECT data.a FROM data INTERSECT SELECT data2.a FROM data2);",
+            "Projection: COUNT(Int16(1))\
+            \n  Aggregate: groupBy=[[]], aggr=[[COUNT(Int16(1))]]\
+            \n    LeftSemi Join: data.a = data2.a\
+            \n      Aggregate: groupBy=[[data.a]], aggr=[[]]\
+            \n        Projection: data.a\n          TableScan: data projection=[a]\
+            \n      Projection: data2.a\n        TableScan: data2 projection=[a]",
+        )
+        .await
+    }
 
     async fn assert_expected_plan(sql: &str, expected_plan_str: &str) -> Result<()> {
         let mut ctx = create_context().await?;
@@ -248,11 +261,11 @@ mod tests {
         let mut ctx = create_context().await?;
         let df = ctx.sql(sql).await?;
         let plan = df.to_logical_plan()?;
+        println!("{:#?}", plan);
+
         let proto = to_substrait_plan(&plan)?;
         let plan2 = from_substrait_plan(&mut ctx, &proto).await?;
         let plan2 = ctx.optimize(&plan2)?;
-
-        println!("{:#?}", plan);
         println!("{:#?}", plan2);
 
         let plan1str = format!("{:?}", plan);
