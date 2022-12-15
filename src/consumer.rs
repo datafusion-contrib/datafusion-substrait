@@ -1,6 +1,8 @@
 use async_recursion::async_recursion;
 use datafusion::common::{DFField, DFSchema, DFSchemaRef};
-use datafusion::logical_expr::{aggregate_function, BinaryExpr, Case, Expr, LogicalPlan, LogicalPlanBuilder, Operator};
+use datafusion::logical_expr::{
+    aggregate_function, BinaryExpr, Case, Expr, LogicalPlan, LogicalPlanBuilder, Operator,
+};
 
 use datafusion::prelude::JoinType;
 use datafusion::{
@@ -27,10 +29,10 @@ use substrait::protobuf::{
     AggregateFunction, Expression, Plan, Rel,
 };
 
+use datafusion::logical_expr::build_join_schema;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
-use datafusion::logical_expr::build_join_schema;
 
 pub fn name_to_op(name: &str) -> Result<Operator> {
     match name {

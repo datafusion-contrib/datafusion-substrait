@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use datafusion::logical_expr::{Between, BinaryExpr, Case};
 use datafusion::{
     common::DFSchemaRef,
     error::{DataFusionError, Result},
@@ -7,7 +8,6 @@ use datafusion::{
     prelude::JoinType,
     scalar::ScalarValue,
 };
-use datafusion::logical_expr::{Between, BinaryExpr, Case};
 
 use substrait::protobuf::{
     aggregate_function::AggregationInvocation,
@@ -380,7 +380,7 @@ fn to_substrait_jointype(join_type: JoinType) -> join_rel::JoinType {
         JoinType::Full => join_rel::JoinType::Outer,
         JoinType::LeftAnti => join_rel::JoinType::Anti,
         JoinType::LeftSemi => join_rel::JoinType::Semi,
-        _ => todo!()
+        _ => todo!(),
     }
 }
 
