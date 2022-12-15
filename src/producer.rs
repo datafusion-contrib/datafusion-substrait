@@ -23,6 +23,7 @@ use substrait::protobuf::{
         simple_extension_declaration::{ExtensionFunction, MappingType},
     },
     function_argument::ArgType,
+    join_rel,
     plan_rel,
     read_rel::{NamedTable, ReadType},
     rel::RelType,
@@ -219,14 +220,7 @@ pub fn to_substrait_rel(
         LogicalPlan::Join(join) => {
             let left = to_substrait_rel(join.left.as_ref(), extension_info)?;
             let right = to_substrait_rel(join.right.as_ref(), extension_info)?;
-            let join_type = match join.join_type {
-                JoinType::Inner => 1,
-                JoinType::Left => 2,
-                JoinType::Right => 3,
-                JoinType::Full => 4,
-                JoinType::Anti => 5,
-                JoinType::Semi => 6,
-            };
+            let join_type = to_substrait_jointype(join.join_type);
             // we only support basic joins so return an error for anything not yet supported
             if join.null_equals_null {
                 return Err(DataFusionError::NotImplemented(
@@ -260,7 +254,7 @@ pub fn to_substrait_rel(
                         common: None,
                         left: Some(left),
                         right: Some(right),
-                        r#type: join_type,
+                        r#type: join_type as i32,
                         expression: Some(Box::new(to_substrait_rex(
                             &e,
                             &join.schema,
@@ -370,6 +364,17 @@ pub fn to_substrait_agg_measure(
             "Expression must be compatible with aggregation. Unsupported expression: {:?}",
             expr
         ))),
+    }
+}
+
+fn to_substrait_jointype(join_type: JoinType) -> join_rel::JoinType {
+    match join_type {
+        JoinType::Inner => join_rel::JoinType::Inner,
+        JoinType::Left => join_rel::JoinType::Left,
+        JoinType::Right => join_rel::JoinType::Right,
+        JoinType::Full => join_rel::JoinType::Outer,
+        JoinType::Anti => join_rel::JoinType::Anti,
+        JoinType::Semi => join_rel::JoinType::Semi,
     }
 }
 
