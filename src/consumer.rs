@@ -1,11 +1,10 @@
 use async_recursion::async_recursion;
 use datafusion::common::{DFField, DFSchema, DFSchemaRef};
-use datafusion::logical_expr::{aggregate_function, LogicalPlan, LogicalPlanBuilder};
-use datafusion::logical_plan::build_join_schema;
+use datafusion::logical_expr::{aggregate_function, BinaryExpr, Case, Expr, LogicalPlan, LogicalPlanBuilder, Operator};
+
 use datafusion::prelude::JoinType;
 use datafusion::{
     error::{DataFusionError, Result},
-    logical_plan::{Expr, Operator},
     optimizer::utils::split_conjunction,
     prelude::{Column, SessionContext},
     scalar::ScalarValue,
@@ -31,6 +30,7 @@ use substrait::protobuf::{
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Arc;
+use datafusion::logical_expr::build_join_schema;
 
 pub fn name_to_op(name: &str) -> Result<Operator> {
     match name {
@@ -283,19 +283,18 @@ pub async fn from_substrait_rel(
             );
             let right = from_substrait_rel(ctx, &join.right.as_ref().unwrap(), extensions).await?;
             let join_type = from_substrait_jointype(join.r#type)?;
-            let mut predicates = vec![];
             let schema = build_join_schema(&left.schema(), &right.schema(), &JoinType::Inner)?;
             let on =
                 from_substrait_rex(&join.expression.as_ref().unwrap(), &schema, extensions).await?;
-            split_conjunction(&on, &mut predicates);
+            let predicates = split_conjunction(&on);
             let pairs: Vec<(Column, Column)> = predicates
                 .iter()
                 .map(|p| match p {
-                    Expr::BinaryExpr {
+                    Expr::BinaryExpr(BinaryExpr {
                         left,
                         op: Operator::Eq,
                         right,
-                    } => match (left.as_ref(), right.as_ref()) {
+                    }) => match (left.as_ref(), right.as_ref()) {
                         (Expr::Column(l), Expr::Column(r)) => Ok((l.clone(), r.clone())),
                         _ => {
                             return Err(DataFusionError::Internal(
@@ -420,8 +419,8 @@ fn from_substrait_jointype(join_type: i32) -> Result<JoinType> {
             join_rel::JoinType::Left => Ok(JoinType::Left),
             join_rel::JoinType::Right => Ok(JoinType::Right),
             join_rel::JoinType::Outer => Ok(JoinType::Full),
-            join_rel::JoinType::Anti => Ok(JoinType::Anti),
-            join_rel::JoinType::Semi => Ok(JoinType::Semi),
+            join_rel::JoinType::Anti => Ok(JoinType::LeftAnti),
+            join_rel::JoinType::Semi => Ok(JoinType::LeftSemi),
             _ => {
                 return Err(DataFusionError::Internal(format!(
                     "unsupported join type {:?}",
@@ -520,11 +519,11 @@ pub async fn from_substrait_rex(
                 )),
                 None => None,
             };
-            Ok(Arc::new(Expr::Case {
+            Ok(Arc::new(Expr::Case(Case {
                 expr: expr,
                 when_then_expr: when_then_expr,
                 else_expr: else_expr,
-            }))
+            })))
         }
         Some(RexType::ScalarFunction(f)) => {
             assert!(f.arguments.len() == 2);
@@ -537,7 +536,7 @@ pub async fn from_substrait_rex(
             };
             match (&f.arguments[0].arg_type, &f.arguments[1].arg_type) {
                 (Some(ArgType::Value(l)), Some(ArgType::Value(r))) => {
-                    Ok(Arc::new(Expr::BinaryExpr {
+                    Ok(Arc::new(Expr::BinaryExpr(BinaryExpr {
                         left: Box::new(
                             from_substrait_rex(l, input_schema, extensions)
                                 .await?
@@ -551,7 +550,7 @@ pub async fn from_substrait_rex(
                                 .as_ref()
                                 .clone(),
                         ),
-                    }))
+                    })))
                 }
                 (l, r) => Err(DataFusionError::NotImplemented(format!(
                     "Invalid arguments for binary expression: {:?} and {:?}",
@@ -623,7 +622,7 @@ fn from_substrait_null(null_type: &Type) -> Result<ScalarValue> {
             r#type::Kind::Decimal(d) => Ok(ScalarValue::Decimal128(
                 None,
                 d.precision as u8,
-                d.scale as u8,
+                d.scale as i8,
             )),
             _ => Err(DataFusionError::NotImplemented(format!(
                 "Unsupported null kind: {:?}",
