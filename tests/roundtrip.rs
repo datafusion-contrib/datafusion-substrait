@@ -80,6 +80,11 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn null_decimal_literal() -> Result<()> {
+        roundtrip("SELECT * FROM data WHERE b = NULL").await
+    }
+
+    #[tokio::test]
     async fn simple_distinct() -> Result<()> {
         test_alias(
             "SELECT * FROM (SELECT distinct a FROM data)", // `SELECT *` is used to add `projection` at the root
@@ -142,6 +147,17 @@ mod tests {
                             WHEN 1 THEN 'one'
                             ELSE 'other'
                            END) FROM data",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn aggregate_case() -> Result<()> {
+        assert_expected_plan(
+            "SELECT SUM(CASE WHEN a > 0 THEN 1 ELSE NULL END) FROM data",
+            "Projection: SUM(CASE WHEN data.a > Int64(0) THEN Int64(1) ELSE Int64(NULL) END)\
+            \n  Aggregate: groupBy=[[]], aggr=[[SUM(CASE WHEN data.a > Int64(0) THEN Int64(1) ELSE Int64(NULL) END)]]\
+            \n    TableScan: data projection=[a]",
         )
         .await
     }
