@@ -4,13 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytes = "1.3.0"
 datafusion = "15.0"
 substrait = "0.3"
 tokio = "1.17"
 async-recursion = "1.0"
-prost = "0.9"
-prost-types = "0.9"
+prost = "0.11"
+prost-types = "0.11"
 
 [build-dependencies]
-prost-build = { version = "0.9" }
+prost-build = { version = "0.11" }
