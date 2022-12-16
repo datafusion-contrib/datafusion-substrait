@@ -68,7 +68,7 @@ jobs:
           curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v21.4/$PROTO_ZIP
           unzip $PROTO_ZIP
           export PATH=$PATH:$HOME/d/protoc/bin
-          protoc.exe --version
+          protoc --version
       - name: Build Workspace
         run: |
           export CARGO_HOME="/github/home/.cargo"
