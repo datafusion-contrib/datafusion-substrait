@@ -27,7 +27,9 @@ pub async fn deserialize(path: &str) -> Result<Box<Plan>> {
     let mut file = OpenOptions::new().read(true).open(path)?;
 
     file.read_to_end(&mut protobuf_in)?;
-    let proto = Message::decode(&*protobuf_in).unwrap();
+    deserialize_bytes(protobuf_in).await
+}
 
-    Ok(Box::new(proto))
+pub async fn deserialize_bytes(proto_bytes: Vec<u8>) -> Result<Box<Plan>> {
+    Ok(Box::new(Message::decode(&*proto_bytes).unwrap()))
 }
