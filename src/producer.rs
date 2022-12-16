@@ -53,6 +53,7 @@ pub fn to_substrait_plan(plan: &LogicalPlan) -> Result<Box<Plan>> {
 
     // Return parsed plan
     Ok(Box::new(Plan {
+        version: None,
         extension_uris: vec![],
         extensions: function_extensions,
         relations: plan_rels,
@@ -104,6 +105,7 @@ pub fn to_substrait_rel(
                             names: vec![scan.table_name.clone()],
                             advanced_extension: None,
                         })),
+                        best_effort_filter: None,
                     }))),
                 }))
             } else {
@@ -354,6 +356,7 @@ pub fn to_substrait_agg_measure(
                     },
                     phase: substrait::protobuf::AggregationPhase::Unspecified as i32,
                     args: vec![],
+                    options: vec![],
                 }),
                 filter: match filter {
                     Some(f) => Some(to_substrait_rex(f, schema, extension_info)?),
@@ -452,6 +455,7 @@ pub fn make_binary_op_scalar_func(
             ],
             output_type: None,
             args: vec![],
+            options: vec![],
         })),
     }
 }
