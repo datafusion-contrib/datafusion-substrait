@@ -73,6 +73,7 @@ jobs:
         run: |
           export CARGO_HOME="/github/home/.cargo"
           export CARGO_TARGET_DIR="/github/home/target"
+          export PATH=$PATH:$HOME/d/protoc/bin
           cargo build
 
   # test the crate
