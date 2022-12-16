@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use datafusion::logical_expr::{Between, BinaryExpr, Case};
 use datafusion::{
+    common::DFSchemaRef,
     error::{DataFusionError, Result},
-    logical_plan::{DFSchemaRef, Expr, JoinConstraint, LogicalPlan, Operator},
+    logical_expr::{Expr, JoinConstraint, LogicalPlan, Operator},
     prelude::JoinType,
     scalar::ScalarValue,
 };
@@ -126,9 +128,9 @@ pub fn to_substrait_rel(
             }))
         }
         LogicalPlan::Filter(filter) => {
-            let input = to_substrait_rel(filter.input.as_ref(), extension_info)?;
+            let input = to_substrait_rel(filter.input().as_ref(), extension_info)?;
             let filter_expr =
-                to_substrait_rex(&filter.predicate, filter.input.schema(), extension_info)?;
+                to_substrait_rex(&filter.predicate(), filter.input().schema(), extension_info)?;
             Ok(Box::new(Rel {
                 rel_type: Some(RelType::Filter(Box::new(FilterRel {
                     common: None,
@@ -219,7 +221,7 @@ pub fn to_substrait_rel(
         LogicalPlan::Join(join) => {
             let left = to_substrait_rel(join.left.as_ref(), extension_info)?;
             let right = to_substrait_rel(join.right.as_ref(), extension_info)?;
-            let join_type = to_substrait_jointype(join.join_type);
+            let join_type = to_substrait_jointype(join.join_type)?;
             // we only support basic joins so return an error for anything not yet supported
             if join.null_equals_null {
                 return Err(DataFusionError::NotImplemented(
@@ -370,14 +372,18 @@ pub fn to_substrait_agg_measure(
     }
 }
 
-fn to_substrait_jointype(join_type: JoinType) -> join_rel::JoinType {
+fn to_substrait_jointype(join_type: JoinType) -> Result<join_rel::JoinType> {
     match join_type {
-        JoinType::Inner => join_rel::JoinType::Inner,
-        JoinType::Left => join_rel::JoinType::Left,
-        JoinType::Right => join_rel::JoinType::Right,
-        JoinType::Full => join_rel::JoinType::Outer,
-        JoinType::Anti => join_rel::JoinType::Anti,
-        JoinType::Semi => join_rel::JoinType::Semi,
+        JoinType::Inner => Ok(join_rel::JoinType::Inner),
+        JoinType::Left => Ok(join_rel::JoinType::Left),
+        JoinType::Right => Ok(join_rel::JoinType::Right),
+        JoinType::Full => Ok(join_rel::JoinType::Outer),
+        JoinType::LeftAnti => Ok(join_rel::JoinType::Anti),
+        JoinType::LeftSemi => Ok(join_rel::JoinType::Semi),
+        _ => Err(DataFusionError::NotImplemented(format!(
+            "Unsupported join type: {}",
+            join_type
+        ))),
     }
 }
 
@@ -460,12 +466,12 @@ pub fn to_substrait_rex(
     ),
 ) -> Result<Expression> {
     match expr {
-        Expr::Between {
+        Expr::Between(Between {
             expr,
             negated,
             low,
             high,
-        } => {
+        }) => {
             if *negated {
                 // `expr NOT BETWEEN low AND high` can be translated into (expr < low OR high < expr)
                 let substrait_expr = to_substrait_rex(expr, schema, extension_info)?;
@@ -522,17 +528,17 @@ pub fn to_substrait_rex(
             let index = schema.index_of_column(&col)?;
             substrait_field_ref(index)
         }
-        Expr::BinaryExpr { left, op, right } => {
+        Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
             let l = to_substrait_rex(left, schema, extension_info)?;
             let r = to_substrait_rex(right, schema, extension_info)?;
 
             Ok(make_binary_op_scalar_func(&l, &r, *op, extension_info))
         }
-        Expr::Case {
+        Expr::Case(Case {
             expr,
             when_then_expr,
             else_expr,
-        } => {
+        }) => {
             let mut ifs: Vec<IfClause> = vec![];
             // Parse base
             if let Some(e) = expr {
